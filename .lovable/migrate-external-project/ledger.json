@@ -1,0 +1,162 @@
+{
+  "project": "compass-navigator-6ff82a9e (ROUT profile hub) -> this Lovable project",
+  "source": {
+    "kind": "github",
+    "repository": "https://github.com/Routbe/compass-navigator-6ff82a9e.git",
+    "branch": "main",
+    "fetched": "2026-11-02T16:02Z",
+    "note": "Public repository cloned into a temporary folder and inspected read-only. No .env exists in the repository (gitignored); no secret values were copied."
+  },
+  "decisions": [
+    {
+      "decision": "Copy the whole repository into this project: application code, pages, content, assets, database scripts, build config and documentation.",
+      "decided": "2026-11-02",
+      "consequence": "The project's own pinned TanStack Start/Router/Vite versions were kept (identical to the source), and the source's extra dependencies were merged in."
+    },
+    {
+      "decision": "The application database stays in the user's own Neon PostgreSQL with better-auth sessions; Lovable Cloud is not used for app data.",
+      "decided": "2026-11-02",
+      "consequence": "No data-layer rewrite. Reads and writes need the Neon connection plus its secrets before any live data flow works."
+    },
+    {
+      "decision": "Rebuild the offline schema record with the project's own script (bun scripts/schema-replay-snapshot.ts), because the committed db/schema.snapshot.json was stale against db/*.sql.",
+      "decided": "2026-11-02",
+      "consequence": "db/schema.snapshot.json and src/lib/db-types.gen.ts now match a replay of all 174 scripts; the schema replay test passes."
+    },
+    {
+      "decision": "Classify parent_authorizations (db/0174) as 'skip' in the account-merge allowlist: a merge is refused while an account owns a parental consent record.",
+      "decided": "2026-11-02",
+      "consequence": "Consent history is never silently moved or cascade-deleted by a merge. The user should confirm this is the rule they want; reassign or drop are the alternatives."
+    }
+
+  ],
+  "capabilities": [
+    {
+      "capability": "application code: 358 route files, components, MDX documentation content",
+      "source": "src/ (1980 files)",
+      "outcome": "copied into this project",
+      "status": "migrated",
+      "next_action": "none"
+    },
+    {
+      "capability": "static assets and brand files",
+      "source": "public/ (26 MB), src/assets/",
+      "outcome": "copied as real files",
+      "status": "migrated",
+      "next_action": "none"
+    },
+    {
+      "capability": "dependencies and build configuration",
+      "source": "package.json, tsconfig.json, vite.config.ts (MDX docs catalog), vitest.config.ts, eslint.config.js, bunfig.toml, components.json",
+      "outcome": "merged; this project's pinned TanStack versions kept",
+      "status": "migrated",
+      "next_action": "none"
+    },
+    {
+      "capability": "database schema (178 tables, 174 reviewed SQL scripts)",
+      "source": "db/*.sql (Neon PostgreSQL), drizzle/schema.ts, db/schema.snapshot.json",
+      "outcome": "scripts copied for review; never applied automatically to Lovable Cloud",
+      "status": "pending",
+      "next_action": "Confirm which scripts are already applied in Neon; review the pending ones there before any live check."
+    },
+    {
+      "capability": "application records (profiles, links, bookings, workspaces, analytics)",
+      "source": "Neon PostgreSQL",
+      "outcome": "stays in Neon; no record export was attached",
+      "status": "pending",
+      "next_action": "Provide CSV or JSON exports of the application tables, or link the Neon connection so the app can read them."
+    },
+    {
+      "capability": "user accounts and identities",
+      "source": "Neon (better-auth tables: user, account, session, passkey, organization, member)",
+      "outcome": "stays in Neon; no user export was attached",
+      "status": "pending",
+      "next_action": "Provide the user export (email addresses and original user IDs) or link the Neon connection."
+    },
+    {
+      "capability": "sign-in and sessions (better-auth, httpOnly rout_session cookie, passkeys, 2FA, OIDC provider)",
+      "source": "src/lib/better-auth.server.ts, src/routes/api_.auth.$.ts, src/lib/auth/*",
+      "outcome": "code preserved; needs the database connection and secrets to function",
+      "status": "pending",
+      "next_action": "Verify sign-up, sign-in, passkey and OIDC flows once the connection and secrets are in place."
+    },
+    {
+      "capability": "authorization and row-level security (rout_app least-privilege role, RLS, admin grants, audit chain)",
+      "source": "db/0117, db/0120, db/0126, db/0127, src/lib/admin-*.server.ts",
+      "outcome": "code preserved; RLS lives in the user's database",
+      "status": "pending",
+      "next_action": "Verify one member cannot read another's rows once the connection works."
+    },
+    {
+      "capability": "file storage",
+      "source": "Scaleway Object Storage (SCALEWAY_* / S3_* variables, aws4fetch signing)",
+      "outcome": "provider preserved in code",
+      "status": "pending",
+      "next_action": "Supply Scaleway keys securely in chat when verification is ready."
+    },
+    {
+      "capability": "transactional email",
+      "source": "Brevo (BREVO_* variables, react-email templates in src/emails)",
+      "outcome": "provider preserved in code",
+      "status": "pending",
+      "next_action": "Supply Brevo API key and sender addresses securely in chat when verification is ready."
+    },
+    {
+      "capability": "payments and payouts",
+      "source": "Stripe (checkout, webhook, status polling) and bunq",
+      "outcome": "provider preserved in code",
+      "status": "pending",
+      "next_action": "Supply Stripe secret/publishable/webhook keys and bunq credentials securely in chat; keep the same Stripe account."
+    },
+    {
+      "capability": "AI assistance and moderation",
+      "source": "Lovable AI gateway (LOVABLE_API_KEY)",
+      "outcome": "provider preserved in code",
+      "status": "pending",
+      "next_action": "Verify bio-assistance and contact triage once the app runs against the database."
+    },
+    {
+      "capability": "third-party profile data",
+      "source": "Steam, Last.fm, YouTube, GitHub, Bluesky/AT Protocol, Mastodon, Proton, Telegram, Snapchat, Spotify",
+      "outcome": "providers preserved in code",
+      "status": "pending",
+      "next_action": "Supply the provider keys/redirect URIs the member actually uses; unused ones stay inactive."
+    },
+    {
+      "capability": "public endpoints and callbacks (OIDC discovery/JWKS, AT Protocol DID, MCP server, agent API, webhooks, ICS, cron handlers)",
+      "source": "src/routes/api*, src/routes/[.]well-known.*, src/routes/act.ts",
+      "outcome": "copied unchanged so external callers keep working",
+      "status": "migrated",
+      "next_action": "Point external callers (Vercel deploy, schedulers, OAuth apps) at the new address during cutover."
+    },
+    {
+      "capability": "schedules (asset cleanup, webhook delivery, availability, DNS checks, audit checkpoints, account purge)",
+      "source": "src/routes/api_.public.cron.* + CRON_SECRET / LOVABLE_CRON_SECRET",
+      "outcome": "handlers copied; no scheduler is attached to this project",
+      "status": "pending",
+      "next_action": "Re-create the cron schedules against the new address and supply the cron secret."
+    },
+    {
+      "capability": "secrets (about 45 names: DATABASE_URL, PUBLIC_ORIGIN, BETTER_AUTH_SECRET, signing/encryption keys, provider keys)",
+      "source": "ENVIRONMENT.md + the source repository's .env (not in the repository)",
+      "outcome": "no values copied; names documented in ENVIRONMENT.md",
+      "status": "pending",
+      "next_action": "Enter values through Lovable's secure secret form when verification is ready."
+    },
+    {
+      "capability": "custom domains and wildcard subdomains (*.rout.be, member domains)",
+      "source": "src/server.ts subdomain handling, src/lib/domains.server.ts, db/0119/0128",
+      "outcome": "code preserved",
+      "status": "pending",
+      "next_action": "Cutover decision: which domain this deployment answers, plus DNS."
+    },
+    {
+      "capability": "verification",
+      "source": "vitest suite in src/test + managed preview build",
+      "outcome": "build OK; typecheck clean (tsgo --noEmit); 275 test files / 1539 tests pass (exit 0); landing, about, sign-in, QR generator, explore, developers and privacy pages render in the preview with no console errors",
+      "status": "verified for code; live flows pending",
+      "next_action": "Re-run the same checks against the live database once the Neon connection and secrets are in place."
+
+    }
+  ]
+}
