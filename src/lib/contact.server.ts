@@ -24,12 +24,11 @@ export interface ContactPayload {
   submittedAt?: string;
 }
 
-import { postmarkTokenStatus } from "@/lib/postmark-key";
+import { isMailConfigured } from "@/emails/send.server";
 
 function brevoKey(): string | null {
-  const { token, error } = postmarkTokenStatus();
-  if (!token) console.error(`[contact] ${error}`);
-  return token;
+  if (!isMailConfigured()) console.error("[contact] SMTP mail is not configured.");
+  return isMailConfigured() ? "smtp" : null;
 }
 
 /**
