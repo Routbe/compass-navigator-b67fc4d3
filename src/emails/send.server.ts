@@ -17,6 +17,8 @@
 import { maskEmail } from "@/lib/security/redact";
 import { buildMimeMessage, newMessageId, FORBIDDEN_HEADER } from "./mime";
 import { sendViaSmtp, SmtpError } from "./smtp.server";
+import { buildBrevoPayload, mailProvider, sendViaBrevo } from "./brevo-driver";
+import { brevoKeyStatus } from "@/lib/brevo-key";
 import type { EmailCategory } from "./template-ids";
 
 export const FALLBACK_ENDPOINT = "https://api.postmarkapp.com/email";
@@ -98,6 +100,7 @@ function adminAddress(): string {
 }
 
 export function isMailConfigured(): boolean {
+  if (mailProvider() === "brevo") return brevoKeyStatus().key !== null;
   return smtpAccount("auth") !== null || smtpAccount("system") !== null;
 }
 
