@@ -39,7 +39,7 @@
 - [x] Sign-in / claim / connect screens follow light & dark theme again (forced dark removed)
 - [x] Footer: less white space
 - [x] Sitemap index + static/profiles/workspaces/calendars sub-sitemaps, robots.txt (AI bots + disallows), llms.txt + llms-full.txt, Organization/Service JSON-LD
-- [ ] Live sitemap: rout.be redirects to www.rout.be, so sitemap URLs point at a redirect — blocked: user must make rout.be the primary domain at their host (Vercel)
-- [ ] Review content + design of every about page — not started
+- [x] Live sitemap: rout.be is now primary; sitemap index + all sub-sitemaps answer 200 directly, robots points to rout.be
+- [x] Review every about page (phone, light + dark): no errors, no sideways scrolling; overview title fixed
 - [x] Minor protection DB script 0174 applied to live Neon; robots/llms/sitemap cache headers verified
 - [ ] Parent e-mail actually sent — blocked: mail service keys not supplied
