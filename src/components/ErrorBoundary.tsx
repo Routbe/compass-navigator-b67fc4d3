@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { AlertTriangle, RotateCcw, ChevronDown, Trash2 } from "lucide-react";
+import { AlertTriangle, RotateCcw, ChevronDown, Trash2, Send } from "lucide-react";
+import { problemReportHref } from "@/lib/problem-report";
 import { Button } from "@/components/ui/button";
 
 interface Props {
