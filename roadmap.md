@@ -45,10 +45,11 @@
 - [ ] Parent e-mail actually sent — blocked: mail service keys not supplied
 
 ## Nov 2 (17:21) request
-- [ ] Mail engine on Postmark (transactional stream, no tracking, no List-Unsubscribe, X-Entity-Ref-ID, system sender), dark-mode mail frame, env example, DNS record list
+- [x] Mail engine on Postmark (transactional stream, no tracking, no List-Unsubscribe, X-Entity-Ref-ID, system sender), dark-mode mail frame, env example, DNS record list
 
 ## Nov 2 (17:24) request
-- [ ] Command Center: in-card QR widget (generate/copy/PNG), today agenda widget + "+ Boeking", System Pulse bar for empty modules
-- [ ] Status line text "ROUT OS v2.5 · Alle systemen operationeel" on signed-in pages
-- [ ] Agenda & Boekingen in Cmd+K and side menu
-- [ ] Re-verify 0173/0174 live, sitemap/llms cache headers, identity vs settings split
+- [x] Command Center: in-card QR widget (generate/copy/PNG), today agenda widget + "+ Boeking", System Pulse bar for empty modules
+- [x] Status line text "ROUT OS v2.5 · Alle systemen operationeel" on signed-in pages
+- [x] Agenda & Boekingen in Cmd+K and side menu
+- [x] Re-verify 0173/0174 live, sitemap/llms cache headers, identity vs settings split
+- [ ] Postmark live send — blocked: POSTMARK_SERVER_TOKEN + rout.be domain verification in Postmark
