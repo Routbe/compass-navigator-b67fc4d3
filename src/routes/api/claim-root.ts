@@ -1,4 +1,4 @@
-import { escapeMailParam } from "@/lib/mail-param-escape";
+import { sendClaimMails, type ClaimMailStatus } from "@/lib/subdomain-claim-mails.server";
 import { createFileRoute } from "@tanstack/react-router";
 import { hasDatabase, sql } from "@/lib/neon";
 import { z } from "zod";
@@ -13,40 +13,11 @@ const claimSchema = z.object({
   userName: z.string().min(1).max(120),
 });
 
-const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
 /** Max 3 pogingen per gebruiker/IP per 10 minuten. */
 const RATE_LIMIT = 3;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 
-type MailStatus = "sent" | "failed" | "failed_brevo_key" | "failed_network";
-
-/** Stuurt één Brevo-template en rapporteert de exacte foutoorzaak terug. */
-async function sendBrevo(
-  apiKey: string,
-  payload: Record<string, unknown>,
-): Promise<{ status: MailStatus; error: string | null }> {
-  try {
-    const res = await fetch(BREVO_URL, {
-      method: "POST",
-      headers: {
-        "api-key": apiKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) return { status: "sent", error: null };
-    const body = await res.text().catch(() => "");
-    const status: MailStatus =
-      res.status === 401 || res.status === 403 ? "failed_brevo_key" : "failed";
-    return { status, error: `HTTP ${res.status}: ${body.slice(0, 500)}` };
-  } catch (error) {
-    return {
-      status: "failed_network",
-      error: error instanceof Error ? error.message : "network error",
-    };
-  }
-}
+type MailStatus = ClaimMailStatus;
 
 export const Route = createFileRoute("/api/claim-root")({
   server: {
@@ -94,7 +65,6 @@ export const Route = createFileRoute("/api/claim-root")({
         const cleanHandle = handle.replace(/^@/, "").toLowerCase();
         const requestedSubdomain = `${cleanHandle}.rout.be`;
 
-        const brevoApiKey = process.env["BREVO_API_KEY"];
         if (!hasDatabase()) {
           console.error("[claim-root] no database configured (DATABASE_URL or Neon connector)");
           return Response.json({ error: "Serverconfiguratie ontbreekt" }, { status: 500 });
@@ -187,37 +157,10 @@ export const Route = createFileRoute("/api/claim-root")({
         }
 
 
-        // 6. Brevo-verzending met gedetailleerde foutrapportage.
-        let adminMail: { status: MailStatus; error: string | null } = {
-          status: "failed_brevo_key",
-          error: "BREVO_API_KEY ontbreekt",
-        };
-        let userMail = adminMail;
-
-        if (brevoApiKey) {
-          const adminEmail = process.env["ADMIN_EMAIL"] ?? "admin@rout.be";
-          [adminMail, userMail] = await Promise.all([
-            sendBrevo(brevoApiKey, {
-              templateId: 2,
-              to: [{ email: adminEmail }],
-              params: {
-                requested_subdomain: escapeMailParam(requestedSubdomain),
-                cname_source: escapeMailParam(cleanHandle),
-                user_name: escapeMailParam(userName),
-                user_email: escapeMailParam(email),
-              },
-            }),
-            sendBrevo(brevoApiKey, {
-              templateId: 3,
-              to: [{ email }],
-              params: {
-                user_name: escapeMailParam(userName),
-                requested_subdomain: escapeMailParam(requestedSubdomain),
-                active_subdomain: escapeMailParam(requestedSubdomain),
-              },
-            }),
-          ]);
-        }
+        // 6. Mail via the shared MailAdapter, with detailed failure reporting.
+        const mails = await sendClaimMails({ subdomain: requestedSubdomain, userName, userEmail: email });
+        const adminMail: { status: MailStatus; error: string | null } = mails.admin;
+        const userMail: { status: MailStatus; error: string | null } = mails.user;
 
         // 7. Audit log bijwerken (de rij is in stap 5 mee aangemaakt).
         const errorPayload =
