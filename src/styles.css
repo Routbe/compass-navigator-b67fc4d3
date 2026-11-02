@@ -119,6 +119,7 @@ html {
 
 :root {
   color-scheme: light;
+  --tour-scrim: 30 6% 7% / 0.55;
   /* Warm Paper #FBF9F5 */
   --background: 40 43% 97%;
   /* Ink charcoal #1A1A1A */
@@ -190,6 +191,7 @@ html {
 
 .dark {
   color-scheme: dark;
+  --tour-scrim: 0 0% 0% / 0.7;
   --background: 30 6% 7%;
   --foreground: 42 31% 94%;
   --card: 30 5% 11%;
