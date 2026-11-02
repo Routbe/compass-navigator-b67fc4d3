@@ -43,3 +43,6 @@
 - [x] Review every about page (phone, light + dark): no errors, no sideways scrolling; overview title fixed
 - [x] Minor protection DB script 0174 applied to live Neon; robots/llms/sitemap cache headers verified
 - [ ] Parent e-mail actually sent — blocked: mail service keys not supplied
+
+## Nov 2 (17:21) request
+- [ ] Mail engine on Postmark (transactional stream, no tracking, no List-Unsubscribe, X-Entity-Ref-ID, system sender), dark-mode mail frame, env example, DNS record list
