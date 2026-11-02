@@ -3,6 +3,7 @@ import { AlertTriangle, RotateCcw, Send } from "lucide-react";
 import { problemReportHref } from "@/lib/problem-report";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StaleChunkReload, willAutoReload } from "@/components/ErrorBoundary";
 
 /**
  * Route-level crash screen.
@@ -12,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  * the whole app. Component-level crashes are still caught by <ErrorBoundary>.
  */
 export function RouteErrorFallback({ error, reset }: { error: Error; reset?: () => void }) {
+  if (willAutoReload(error)) return <StaleChunkReload error={error} />;
   console.error("[RouteError]", error);
 
   const showStack = import.meta.env.DEV || import.meta.env.MODE !== "production";

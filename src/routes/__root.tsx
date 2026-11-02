@@ -49,6 +49,7 @@ function ShellSwitch({ children }: { children: ReactNode }) {
 }
 
 function NotFoundComponent() {
+  if (stale) return <StaleChunkReload error={error} />;
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -71,6 +72,7 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const [stale] = useState(() => willAutoReload(error));
   console.error(error);
   const router = useRouter();
   useEffect(() => {

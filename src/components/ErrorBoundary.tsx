@@ -67,11 +67,12 @@ if (typeof window !== "undefined") {
 
 export class ErrorBoundary extends Component<Props, State> {
   override state: State = { error: null, info: null, detailsOpen: false };
+  private reloading = false;
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    if (reloadForStaleChunk(error)) return;
+    if (reloadForStaleChunk(error)) { this.reloading = true; return; }
     console.error("[ErrorBoundary]", this.props.label ?? "app", error, info);
     this.setState({ info });
   }
@@ -111,6 +112,7 @@ export class ErrorBoundary extends Component<Props, State> {
   override render() {
     const { error, info, detailsOpen } = this.state;
     if (!error) return this.props.children;
+    if (!this.props.inline && STALE_RE.test(error.message) && (willAutoReload(error) || this.reloading)) return <StaleChunkReload error={error} />;
     const stack = [error.stack ?? `${error.name}: ${error.message}`, info?.componentStack]
       .filter(Boolean)
       .join("\n\n");
