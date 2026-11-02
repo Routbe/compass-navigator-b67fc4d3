@@ -229,10 +229,14 @@ export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; erro
   const correlationId = opts.correlationId ?? newCorrelationId();
   const sender = senderFor(opts.category, opts.tags);
   const box: Mailbox = sender === AUTH_SENDER ? "auth" : "system";
-  const account = smtpAccount(box);
+  const provider = mailProvider();
+  const brevoKey = provider === "brevo" ? brevoKeyStatus().key : null;
+  const account = provider === "infomaniak" ? smtpAccount(box) : null;
   const fallbackKey = process.env["FALLBACK_MAIL_API_KEY"]?.trim() || null;
-  if (!account && !fallbackKey) {
-    const msg = `E-mailverzending is niet geconfigureerd (SMTP_PASS_${box.toUpperCase()} ontbreekt).`;
+  if (!account && !brevoKey && !fallbackKey) {
+    const msg = provider === "brevo"
+      ? (brevoKeyStatus().error ?? "BREVO_API_KEY ontbreekt.")
+      : `E-mailverzending is niet geconfigureerd (SMTP_PASS_${box.toUpperCase()} ontbreekt).`;
     console.error(`[Mailer] ${msg}`, { correlationId, to: maskEmail(opts.to) });
     return { sent: false, error: msg };
   }
@@ -250,10 +254,21 @@ export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; erro
   const text = opts.text ?? textFromHtml(html);
   const subject = opts.subject ?? "ROUT";
   const label = opts.category ?? "mail";
-  console.info("[Mailer] sending", { correlationId, to: maskEmail(opts.to), category: opts.category ?? "(none)", params: summariseParams(opts.params) });
+  console.info("[Mailer] sending", { correlationId, provider, to: maskEmail(opts.to), category: opts.category ?? "(none)", params: summariseParams(opts.params) });
 
-  let result: { sent: boolean; error?: string } = { sent: false, error: "SMTP not configured." };
+  let result: { sent: boolean; error?: string } = { sent: false, error: "Mail provider not configured." };
   let transient = true;
+  if (brevoKey) {
+    const payload = buildBrevoPayload({
+      from: splitSender(sender), to: opts.to, replyTo: opts.replyTo ?? REPLY_TO, subject, html, text,
+      messageId: newMessageId(), entityRefId: correlationId, tags: transactionalTags(opts.category, opts.tags),
+      ...(opts.attachments ? { attachments: opts.attachments } : {}),
+    });
+    const r = await sendViaBrevo(brevoKey, payload, SMTP_TIMEOUT_MS);
+    transient = r.transient;
+    result = r.sent ? { sent: true } : { sent: false, error: r.error ?? "Brevo failed." };
+    console[r.sent ? "info" : "error"](`[Mailer] ${label} ${r.sent ? "sent" : "failed"} via Brevo`, { correlationId, error: r.error });
+  }
   if (account) {
     const from = splitSender(sender);
     const message = buildMimeMessage({
