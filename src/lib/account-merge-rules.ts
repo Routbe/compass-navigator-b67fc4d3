@@ -39,6 +39,11 @@ export const MERGE_TABLES: Readonly<Record<string, MergeTableRule>> = {
   business_verifications: r("skip"),
   account_deletions: r("skip"),
   sepa_review_queue: r("skip"),
+  // Parental consent (0174): a parent's approval belongs to the account it was
+  // granted for. The FK cascades on delete, so a merge is refused instead of
+  // silently moving or dropping a consent record.
+  parent_authorizations: r("skip"),
+
   // Append-only audit trails without FK: history stays as written.
   security_audit_logs: r("retain"),
   identity_link_events: r("retain"),
