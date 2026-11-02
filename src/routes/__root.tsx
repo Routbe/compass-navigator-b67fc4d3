@@ -23,7 +23,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ErrorBoundary, StaleChunkReload, willAutoReload } from "@/components/ErrorBoundary";
 import { LanguageSync } from "@/components/LanguageSync";
 import "@/lib/env";
 import { notFound, redirect } from "@tanstack/react-router";
