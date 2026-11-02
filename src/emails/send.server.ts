@@ -1,26 +1,43 @@
 /**
- * Central transactional mailer — Postmark, transactional stream only.
+ * Central transactional mailer — Infomaniak SMTP (Swiss), primary and only by default.
  *
- * Every system e-mail in ROUT (sign-in codes, security notices, Chronos
- * warnings, receipts) goes through `sendMail`. The payload is built by the
- * pure `buildPostmarkPayload` so the privacy guarantees are testable:
- *   - TrackOpens false, TrackLinks "None": no pixel, links stay pure https://rout.be/…
- *   - MessageStream "outbound": Postmark's transactional stream (never broadcast)
- *   - no List-Unsubscribe / List-* / Precedence headers, ever
- *   - X-Entity-Ref-ID per message so clients never thread unrelated codes
- *   - fixed system senders on rout.be
+ * Every system e-mail (sign-in codes, security notices, parental consent,
+ * receipts) goes through `sendMail`. The message is built by the pure
+ * `buildMimeMessage` (src/emails/mime.ts), so the privacy rules are testable:
+ *   - no tracking: no pixel, no link rewriting, links stay pure https://rout.be/…
+ *   - no List-Unsubscribe / List-* / Precedence / X-Campaign / X-Mailin-* headers, ever
+ *   - unique cryptographic Message-ID <id@rout.be> + X-Entity-Ref-ID per mail
+ *   - auth mail from auth@rout.be, system mail from system@rout.be, Reply-To hallo@rout.be
+ * Optional fallback (only when FALLBACK_MAIL_API_KEY is set): a Postmark-compatible
+ * HTTPS API with the same sanitation, used only on SMTP timeout/network errors.
  *
  * Never throws: a failing mail must not break a webhook or a sign-up.
  */
 
 import { maskEmail } from "@/lib/security/redact";
-import { postmarkTokenStatus, describePostmarkFailure } from "@/lib/postmark-key";
+import { buildMimeMessage, newMessageId, FORBIDDEN_HEADER } from "./mime";
+import { sendViaSmtp, SmtpError } from "./smtp.server";
 import type { EmailCategory } from "./template-ids";
 
-export const POSTMARK_ENDPOINT = "https://api.postmarkapp.com/email";
+export const FALLBACK_ENDPOINT = "https://api.postmarkapp.com/email";
 export const MESSAGE_STREAM = "outbound";
-export const AUTH_SENDER = "ROUT <auth@rout.be>";
-export const SYSTEM_SENDER = "ROUT <system@rout.be>";
+export const AUTH_SENDER = "ROUT Authentication <auth@rout.be>";
+export const SYSTEM_SENDER = "ROUT System <system@rout.be>";
+export const REPLY_TO = { email: "hallo@rout.be", name: "ROUT" };
+export const SMTP_TIMEOUT_MS = 4000;
+
+type Mailbox = "auth" | "system";
+export interface SmtpAccount { host: string; port: number; user: string; pass: string }
+
+/** Reads the Infomaniak account for a mailbox; null when not configured. */
+export function smtpAccount(box: Mailbox): SmtpAccount | null {
+  const host = process.env["SMTP_HOST"]?.trim() || "mail.infomaniak.com";
+  const port = Number(process.env["SMTP_PORT"] ?? 465);
+  const user = process.env[box === "auth" ? "SMTP_USER_AUTH" : "SMTP_USER_SYSTEM"]?.trim() || `${box}@rout.be`;
+  const pass = process.env[box === "auth" ? "SMTP_PASS_AUTH" : "SMTP_PASS_SYSTEM"];
+  if (!pass || (port !== 465 && port !== 587)) return null;
+  return { host, port, user, pass };
+}
 
 /** Categories sent from auth@rout.be; everything else uses system@rout.be. */
 const SECURITY_CATEGORIES = new Set([
@@ -28,7 +45,6 @@ const SECURITY_CATEGORIES = new Set([
 ]);
 
 /** Headers that would make a client treat the mail as a list or newsletter. */
-const FORBIDDEN_HEADER = /^(list-|precedence$|x-mailin-|x-campaign|feedback-id$)/i;
 
 export interface MailOptions {
   notificationUserId?: string;
@@ -82,7 +98,12 @@ function adminAddress(): string {
 }
 
 export function isMailConfigured(): boolean {
-  return postmarkTokenStatus().token !== null;
+  return smtpAccount("auth") !== null || smtpAccount("system") !== null;
+}
+
+function splitSender(sender: string): { name: string; email: string } {
+  const m = /^(.*)<([^>]+)>$/.exec(sender);
+  return { name: (m?.[1] ?? "").trim(), email: (m?.[2] ?? sender).trim() };
 }
 
 export function newCorrelationId(): string {
@@ -125,7 +146,7 @@ export function buildPostmarkPayload(input: {
   return {
     From: senderFor(input.category, input.tags),
     To: input.to,
-    ReplyTo: formatAddress(input.replyTo ?? { email: "hallo@rout.be", name: "ROUT" }),
+    ReplyTo: formatAddress(input.replyTo ?? REPLY_TO),
     Subject: input.subject,
     HtmlBody: input.html,
     TextBody: input.text,
@@ -142,38 +163,24 @@ export function buildPostmarkPayload(input: {
   };
 }
 
-const isTransient = (status: number) => status === 408 || status === 429 || status >= 500;
-const MAX_ATTEMPTS = 3;
-const BACKOFF_MS = [400, 1200];
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-async function postToPostmark(token: string, body: Record<string, unknown>, label: string, correlationId: string): Promise<{ sent: boolean; error?: string }> {
-  let lastError = "Could not reach the mail provider.";
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(POSTMARK_ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json", "X-Postmark-Server-Token": token },
-        body: JSON.stringify(body),
-      });
-      const detail = (await res.text().catch(() => "")).slice(0, 500);
-      let code = 0;
-      try { code = Number((JSON.parse(detail) as { ErrorCode?: number }).ErrorCode ?? 0); } catch { /* non-JSON */ }
-      if (res.ok && code === 0) {
-        console.info(`[Mailer] ${label} sent`, { correlationId, try: attempt });
-        return { sent: true };
-      }
-      lastError = describePostmarkFailure(res.status, detail);
-      console.error(`[Postmark API Error] ${label} failed [${res.status}]`, { correlationId, try: `${attempt}/${MAX_ATTEMPTS}`, detail });
-      if (!isTransient(res.status) || attempt === MAX_ATTEMPTS) return { sent: false, error: lastError };
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : lastError;
-      console.error(`[Mailer] ${label} threw`, { correlationId, try: `${attempt}/${MAX_ATTEMPTS}`, error: lastError });
-      if (attempt === MAX_ATTEMPTS) return { sent: false, error: lastError };
+async function postToFallback(key: string, body: Record<string, unknown>, label: string, correlationId: string): Promise<{ sent: boolean; error?: string }> {
+  try {
+    const res = await fetch(process.env["FALLBACK_MAIL_API_URL"]?.trim() || FALLBACK_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json", "X-Postmark-Server-Token": key },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(SMTP_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      console.info(`[Mailer] ${label} sent via fallback`, { correlationId });
+      return { sent: true };
     }
-    await wait(BACKOFF_MS[attempt - 1] ?? 1200);
+    const detail = (await res.text().catch(() => "")).slice(0, 300);
+    console.error(`[Mailer] fallback refused ${label} [${res.status}]`, { correlationId, detail });
+    return { sent: false, error: `Fallback mail API refused the message (${res.status}).` };
+  } catch (error) {
+    return { sent: false, error: error instanceof Error ? error.message : "Fallback mail API unreachable." };
   }
-  return { sent: false, error: lastError };
 }
 
 /** Log-safe view of params: keys and lengths only. */
@@ -220,10 +227,14 @@ export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; erro
     }
   }
   const correlationId = opts.correlationId ?? newCorrelationId();
-  const { token, error: tokenError } = postmarkTokenStatus();
-  if (!token) {
-    console.error(`[Mailer] ${tokenError}`, { correlationId, to: maskEmail(opts.to) });
-    return { sent: false, error: tokenError ?? "E-mailverzending is niet geconfigureerd." };
+  const sender = senderFor(opts.category, opts.tags);
+  const box: Mailbox = sender === AUTH_SENDER ? "auth" : "system";
+  const account = smtpAccount(box);
+  const fallbackKey = process.env["FALLBACK_MAIL_API_KEY"]?.trim() || null;
+  if (!account && !fallbackKey) {
+    const msg = `E-mailverzending is niet geconfigureerd (SMTP_PASS_${box.toUpperCase()} ontbreekt).`;
+    console.error(`[Mailer] ${msg}`, { correlationId, to: maskEmail(opts.to) });
+    return { sent: false, error: msg };
   }
   if (!opts.html && !opts.text) {
     console.error("[Mailer] nothing to send: no body supplied", { correlationId, category: opts.category ?? "(none)" });
@@ -237,23 +248,48 @@ export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; erro
     if (branded) html = branded;
   }
   const text = opts.text ?? textFromHtml(html);
-
-  const body = buildPostmarkPayload({
-    to: opts.to,
-    subject: opts.subject ?? "ROUT",
-    html,
-    text,
-    ...(opts.category ? { category: opts.category } : {}),
-    ...(opts.tags ? { tags: opts.tags } : {}),
-    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
-    ...(opts.attachments ? { attachments: opts.attachments } : {}),
-    correlationId,
-  });
+  const subject = opts.subject ?? "ROUT";
+  const label = opts.category ?? "mail";
   console.info("[Mailer] sending", { correlationId, to: maskEmail(opts.to), category: opts.category ?? "(none)", params: summariseParams(opts.params) });
 
-  const result = await postToPostmark(token, body, `${opts.category ?? "mail"}`, correlationId);
+  let result: { sent: boolean; error?: string } = { sent: false, error: "SMTP not configured." };
+  let transient = true;
+  if (account) {
+    const from = splitSender(sender);
+    const message = buildMimeMessage({
+      from: { name: from.name, email: account.user },
+      to: opts.to,
+      replyTo: opts.replyTo ?? REPLY_TO,
+      subject,
+      html,
+      text,
+      messageId: newMessageId(),
+      entityRefId: correlationId,
+      ...(opts.attachments ? { attachments: opts.attachments.map((f) => ({ ...f, contentType: mimeFor(f.name) })) } : {}),
+    });
+    try {
+      await sendViaSmtp({ ...account, timeoutMs: SMTP_TIMEOUT_MS }, { from: account.user, to: opts.to }, message);
+      console.info(`[Mailer] ${label} sent via Infomaniak SMTP`, { correlationId });
+      result = { sent: true };
+    } catch (error) {
+      transient = !(error instanceof SmtpError) || error.transient;
+      result = { sent: false, error: error instanceof Error ? error.message : "SMTP failed." };
+      console.error(`[Mailer] SMTP ${label} failed`, { correlationId, transient, error: result.error });
+    }
+  }
+  // Fallback only on timeouts/network errors, never on a definitive refusal.
+  if (!result.sent && transient && fallbackKey) {
+    const body = buildPostmarkPayload({
+      to: opts.to, subject, html, text, correlationId,
+      ...(opts.category ? { category: opts.category } : {}),
+      ...(opts.tags ? { tags: opts.tags } : {}),
+      ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+      ...(opts.attachments ? { attachments: opts.attachments } : {}),
+    });
+    result = await postToFallback(fallbackKey, body, label, correlationId);
+  }
   if (!result.sent && !opts.skipAdminAlert) {
-    notifyAdminOfFallback({ FAILED_TEMPLATE_ID: opts.category ?? "mail", USED_FALLBACK_ID: "none", RECIPIENT_EMAIL: opts.to, REASON: `${result.error ?? "unknown"} [${correlationId}]` });
+    notifyAdminOfFallback({ FAILED_TEMPLATE_ID: label, USED_FALLBACK_ID: fallbackKey ? "fallback-api" : "none", RECIPIENT_EMAIL: opts.to, REASON: `${result.error ?? "unknown"} [${correlationId}]` });
   }
   return result;
 }
