@@ -182,7 +182,7 @@ export async function deliverGiftCard(row: Row): Promise<void> {
   const recipientEmail = str(row, "recipient_email");
   const physical = row["physical_delivery"] === true;
   const paidAt = str(row, "paid_at") ?? new Date().toISOString();
-  const origin = process.env["PUBLIC_ORIGIN"] ?? "https://www.rout.be";
+  const origin = process.env["PUBLIC_ORIGIN"] ?? "https://rout.be";
   const viewUrl = `${origin}/gift/${code}`;
 
   const invoiceNumber = await invoiceNumberFor(paidAt).catch(() => `GIFT-${code.slice(-8)}`);
