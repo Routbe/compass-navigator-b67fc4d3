@@ -32,13 +32,6 @@ function brevoKey(): string | null {
   return token;
 }
 
-function senderAddress(): { name: string; email: string } {
-  return {
-    name: process.env["BREVO_SENDER_NAME"] ?? "ROUT",
-    email: process.env["BREVO_SENDER_EMAIL"] ?? CONTACT_RECIPIENT,
-  };
-}
-
 /**
  * kChat webhook — read exclusively from the KCHAT_WEBHOOK_URL environment
  * variable. No fallbacks, no hardcoded URL anywhere in the codebase.

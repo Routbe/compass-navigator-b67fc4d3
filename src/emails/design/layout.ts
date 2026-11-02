@@ -153,28 +153,38 @@ export function shell(o: ShellOptions): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="x-apple-disable-message-reformatting" />
-<meta name="color-scheme" content="light only" />
-<meta name="supported-color-schemes" content="light only" />
+<meta name="color-scheme" content="light dark" />
+<meta name="supported-color-schemes" content="light dark" />
 <title>${o.title} — ROUT</title>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 ${jsonLd}
 <style type="text/css">
-:root { color-scheme: light only; supported-color-schemes: light only; }
+:root { color-scheme: light dark; supported-color-schemes: light dark; }
 body { margin: 0 !important; padding: 0 !important; width: 100% !important; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
 table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
 img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+@media (prefers-color-scheme: dark) {
+  body, .rout-bg { background-color: #0d0d0c !important; }
+  .rout-card { background-color: #161615 !important; border-color: #2a2a28 !important; }
+  .rout-card td, .rout-card div, .rout-card p, .rout-card span, .rout-card strong { color: #ececea !important; border-color: #2a2a28 !important; }
+  .rout-card a { color: #ffffff !important; }
+  .rout-foot { background-color: #121211 !important; }
+  .rout-card table[style*="#fafafa"], .rout-card table[style*="#ffffff"] { background-color: #1e1e1c !important; border-color: #2a2a28 !important; }
+  .rout-logo { filter: invert(1); }
+}
+[data-ogsc] .rout-card { background-color: #161615 !important; }
 @media only screen and (max-width: 600px) { .rout-card { border-radius: 12px !important; } .rout-padding { padding: 24px 18px !important; } }
 </style>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f6f6f4; -webkit-font-smoothing: antialiased;">
 <div style="display: none; max-height: 0px; overflow: hidden; opacity: 0; font-size: 1px; line-height: 1px; color: #ffffff; mso-hide: all;">${o.preheader} ${"&#847; ".repeat(15)}</div>
-<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f6f6f4; font-family: ${MONO};">
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="rout-bg" style="background-color: #f6f6f4; font-family: ${MONO};">
 <tr><td align="center" style="padding: 40px 16px;">
 <!--[if mso]><table role="presentation" align="center" width="520" border="0" cellspacing="0" cellpadding="0"><tr><td><![endif]-->
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="rout-card" style="max-width: 520px; background-color: #ffffff; border: 1px solid #e6e6e1; border-radius: 20px; overflow: hidden;">
 <tr><td class="rout-padding" style="padding: 28px 28px 20px 28px; border-bottom: 1px solid #f0f0ec;">
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"><tr>
-<td valign="top" width="42"><a href="https://rout.be" target="_blank" style="text-decoration: none;"><img src="https://rout.be/img/rout-bunny.png" width="34" height="34" alt="ROUT" style="display: block; border: 0;"></a></td>
+<td valign="top" width="42"><a href="https://rout.be" target="_blank" style="text-decoration: none;"><img src="https://rout.be/img/rout-bunny.png" width="34" height="34" alt="ROUT" class="rout-logo" style="display: block; border: 0;"></a></td>
 <td valign="top"><div style="font-weight: 600; font-size: 16px; line-height: 1.2; letter-spacing: 0.14em; color: #111111; font-family: ${MONO};">ROUT</div><div style="font-size: 12px; color: #777777; margin-top: 3px; font-family: ${MONO};">Sovereign Infrastructure</div></td>
 <td valign="top" align="right" style="font-weight: 500; font-size: 11px; line-height: 1.2; color: ${color}; letter-spacing: 0.05em; font-family: ${MONO};"><span style="font-size: 12px;">•</span> ${o.badge}</td>
 </tr></table>
@@ -183,7 +193,7 @@ img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration
 ${o.body.join("\n")}
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-top: 20px;"><tr><td style="border-left: 3px solid #111111; padding-left: 14px; font-family: ${MONO};"><div style="font-weight: 700; font-size: 14px; color: #111111;">${o.desk.name}</div><div style="font-size: 12px; color: #666666; margin-top: 2px;">${o.desk.role}</div></td></tr></table>
 </td></tr>
-<tr><td class="rout-padding" style="padding: 20px 28px 28px 28px; background-color: #fafafa; border-top: 1px solid #f0f0ec; font-family: ${MONO};">
+<tr><td class="rout-padding rout-foot" style="padding: 20px 28px 28px 28px; background-color: #fafafa; border-top: 1px solid #f0f0ec; font-family: ${MONO};">
 <div style="margin-bottom: 20px;">${ROUT_BADGE_HTML}</div>
 <div style="font-size: 12px; line-height: 1.6; color: #666666; margin-bottom: 16px;"><a href="https://rout.be" target="_blank" style="color: #111111; text-decoration: none;">rout.be</a> <span style="color: #cccccc; margin: 0 8px;">·</span> <a href="https://rout.be/privacy" target="_blank" style="color: #666666; text-decoration: none;">${f.privacy}</a> <span style="color: #cccccc; margin: 0 8px;">·</span> <a href="https://rout.be/terms" target="_blank" style="color: #666666; text-decoration: none;">${f.terms}</a> <span style="color: #cccccc; margin: 0 8px;">·</span> <a href="https://rout.be/manifesto" target="_blank" style="color: #666666; text-decoration: none;">Manifesto</a></div>
 <div style="border-top: 1px solid #eeeeea; padding-top: 14px; font-size: 11px; line-height: 1.6; color: #888888;"><div>© ${year} ROUT <span style="color: #cccccc;">·</span> Open Source (AGPLv3)</div><div style="margin-top: 2px; color: #777777;">${f.by} <a href="https://delplanche.cloud" target="_blank" style="color: #111111; text-decoration: underline; font-weight: 600;">Delplanche</a></div></div>
