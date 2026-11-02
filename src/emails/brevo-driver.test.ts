@@ -13,7 +13,10 @@ describe("brevo driver", () => {
   it("strips list headers and sets threading ids", () => {
     const p = buildBrevoPayload({ ...base, extraHeaders: { "List-Unsubscribe": "<x>", Precedence: "bulk", "X-Campaign": "1" } });
     const h = p["headers"] as Record<string, string>;
-    expect(Object.keys(h).sort()).toEqual(["Message-ID", "X-Entity-Ref-ID"]);
+    expect(Object.keys(h).filter((k) => /^(list-|precedence|x-campaign)/i.test(k))).toEqual([]);
+    expect(h["X-Entity-Ref-ID"]).toBe("mail_1");
+    expect(h["X-Mailin-Track-Opens"]).toBe("0");
+    expect(h["X-Mailin-Track-Clicks"]).toBe("0");
     expect(h["Message-ID"]).toBe("<abc@rout.be>");
   });
   it("keeps raw links in html", () => {
