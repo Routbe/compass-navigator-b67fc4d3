@@ -1,6 +1,6 @@
 import { BRAND, LOGO_INNER, LOGO_VIEWBOX } from "@/lib/brand/logo";
 
-export const ROUT_BUTTON_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${LOGO_VIEWBOX.width} ${LOGO_VIEWBOX.height}" width="20" height="25" fill="currentColor" aria-hidden="true"><g>${LOGO_INNER}</g></svg>`;
+export const ROUT_BUTTON_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${LOGO_VIEWBOX.width} ${LOGO_VIEWBOX.height}" width="22" height="22" fill="currentColor" aria-hidden="true"><g>${LOGO_INNER}</g></svg>`;
 
 /** These are routes the integrator implements, never ROUT authorization URLs. */
 export type RoutButtonTheme = "light" | "dark";
@@ -28,7 +28,7 @@ Include your framework's CSRF field/protection in this form. -->
     cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
   .rout-button:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--rout-button-edge); }
   .rout-button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--rout-button-edge); }
-  .rout-button svg { width: 18px; height: 22px; flex-shrink: 0; }
+  .rout-button svg { width: 22px; height: 22px; flex-shrink: 0; }
   .rout-button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
   .rout-button:disabled { opacity: .5; cursor: not-allowed; }
 </style>`;

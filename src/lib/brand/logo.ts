@@ -5,7 +5,12 @@ import logoSvg from "@/assets/rout-logo.svg?raw";
  * persbestand gebruikt exact deze vectorvorm; enkel kleur, achtergrond en
  * wel/geen cirkels mogen verschillen. Nooit een ander konijn tekenen.
  */
-export const LOGO_VIEWBOX = { width: 1024, height: 1254 } as const;
+const viewBoxMatch = /viewBox="\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)\s*"/.exec(logoSvg);
+/** Read from the canonical file so a re-traced logo is never cropped. */
+export const LOGO_VIEWBOX = {
+  width: viewBoxMatch ? Number(viewBoxMatch[1]) : 2048,
+  height: viewBoxMatch ? Number(viewBoxMatch[2]) : 2048,
+} as const;
 
 /** Inhoud van het logo (de `<g>` met het pad), zonder de buitenste `<svg>`. */
 export const LOGO_INNER = logoSvg
