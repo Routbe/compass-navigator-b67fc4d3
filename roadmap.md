@@ -41,4 +41,5 @@
 - [x] Sitemap index + static/profiles/workspaces/calendars sub-sitemaps, robots.txt (AI bots + disallows), llms.txt + llms-full.txt, Organization/Service JSON-LD
 - [ ] Live sitemap: rout.be redirects to www.rout.be, so sitemap URLs point at a redirect — blocked: user must make rout.be the primary domain at their host (Vercel)
 - [ ] Review content + design of every about page — not started
-- [ ] Minor protection: date of birth, parental consent mail, /parent/control, parent-gated payments, Q&A levels, DB script — not started (needs DB script approval + mail sending)
+- [x] Minor protection DB script 0174 applied to live Neon; robots/llms/sitemap cache headers verified
+- [ ] Parent e-mail actually sent — blocked: mail service keys not supplied
