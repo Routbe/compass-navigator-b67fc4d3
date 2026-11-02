@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { AlertTriangle, RotateCcw, ChevronDown, Trash2 } from "lucide-react";
+import { AlertTriangle, RotateCcw, ChevronDown, Trash2, Send } from "lucide-react";
+import { problemReportHref } from "@/lib/problem-report";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -122,6 +123,12 @@ export class ErrorBoundary extends Component<Props, State> {
             <Button variant="outline" onClick={this.resetCache}>
               <Trash2 className="mr-2 h-4 w-4" aria-hidden />
               Reset app &amp; cache
+            </Button>
+            <Button asChild variant="outline">
+              <a href={problemReportHref({ name: error.name, message: error.message, stack }, typeof window !== "undefined" ? window.location.pathname : "")}>
+                <Send className="mr-2 h-4 w-4" aria-hidden />
+                Probleem melden
+              </a>
             </Button>
           </div>
           <div className="pt-1 text-left">

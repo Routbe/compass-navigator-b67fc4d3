@@ -1,3 +1,4 @@
+import { readProblemReport } from "@/lib/problem-report";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@/lib/router-compat";
 import { z } from "zod";
@@ -91,6 +92,11 @@ export default function Contact() {
   const loadedAtRef = useRef<number | null>(null);
   useEffect(() => {
     loadedAtRef.current = Date.now();
+    const report = readProblemReport(window.location.search);
+    if (report !== null) {
+      setTopic("bug");
+      if (report) setForm((prev) => (prev.message ? prev : { ...prev, message: report }));
+    }
   }, []);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
