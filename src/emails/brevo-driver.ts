@@ -8,6 +8,12 @@
 import { FORBIDDEN_HEADER } from "./mime";
 
 export const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+export const BREVO_TRACKING_OFF = {
+  "X-Mailin-Track": "0",
+  "X-Mailin-Track-Opens": "0",
+  "X-Mailin-Track-Clicks": "0",
+  "X-Mailin-Tag": "transactional",
+} as const;
 export type MailProvider = "brevo" | "infomaniak";
 
 export function mailProvider(): MailProvider {
@@ -33,6 +39,9 @@ export function buildBrevoPayload(input: BrevoPayloadInput): Record<string, unkn
   for (const [k, v] of Object.entries(input.extraHeaders ?? {})) {
     if (!FORBIDDEN_HEADER.test(k) && !/^(message-id|x-entity-ref-id)$/i.test(k)) headers[k] = v;
   }
+  // Brevo's own per-message switches (consumed by Brevo, never delivered):
+  // no open pixel, no click rewriting — same as the original working setup.
+  Object.assign(headers, BREVO_TRACKING_OFF);
   headers["Message-ID"] = input.messageId;
   headers["X-Entity-Ref-ID"] = input.entityRefId;
   return {
@@ -48,7 +57,20 @@ export function buildBrevoPayload(input: BrevoPayloadInput): Record<string, unkn
   };
 }
 
+const BACKOFF_MS = [400, 1200];
+
+/** Up to 3 attempts on 408/429/5xx/network (as the original sender did); a 4xx refusal is final. */
 export async function sendViaBrevo(key: string, payload: Record<string, unknown>, timeoutMs: number): Promise<{ sent: boolean; error?: string; transient: boolean }> {
+  let last: { sent: boolean; error?: string; transient: boolean } = { sent: false, error: "Brevo unreachable.", transient: true };
+  for (let i = 0; i < 3; i++) {
+    last = await attempt(key, payload, timeoutMs);
+    if (last.sent || !last.transient) return last;
+    if (i < 2) await new Promise((r) => setTimeout(r, BACKOFF_MS[i]));
+  }
+  return last;
+}
+
+async function attempt(key: string, payload: Record<string, unknown>, timeoutMs: number): Promise<{ sent: boolean; error?: string; transient: boolean }> {
   try {
     const res = await fetch(BREVO_ENDPOINT, {
       method: "POST",
@@ -58,7 +80,7 @@ export async function sendViaBrevo(key: string, payload: Record<string, unknown>
     });
     if (res.ok) return { sent: true, transient: false };
     const detail = (await res.text().catch(() => "")).slice(0, 300);
-    return { sent: false, error: `Brevo refused the message (${res.status}): ${detail}`, transient: res.status >= 500 || res.status === 429 };
+    return { sent: false, error: `Brevo refused the message (${res.status}): ${detail}`, transient: res.status >= 500 || res.status === 429 || res.status === 408 };
   } catch (error) {
     return { sent: false, error: error instanceof Error ? error.message : "Brevo unreachable.", transient: true };
   }

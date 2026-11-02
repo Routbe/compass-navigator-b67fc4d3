@@ -267,7 +267,7 @@ export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; erro
       messageId: newMessageId(), entityRefId: correlationId, tags: transactionalTags(opts.category, opts.tags),
       ...(opts.attachments ? { attachments: opts.attachments } : {}),
     });
-    const r = await sendViaBrevo(brevoKey, payload, SMTP_TIMEOUT_MS);
+    const r = await sendViaBrevo(brevoKey, payload, 8000);
     transient = r.transient;
     result = r.sent ? { sent: true } : { sent: false, error: r.error ?? "Brevo failed." };
     console[r.sent ? "info" : "error"](`[Mailer] ${label} ${r.sent ? "sent" : "failed"} via Brevo`, { correlationId, error: r.error });
