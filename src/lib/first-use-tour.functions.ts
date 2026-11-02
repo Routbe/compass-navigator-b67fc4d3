@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth/middleware";
-const areaSchema = z.object({ area: z.enum(["studio", "dashboard"]) });
+const areaSchema = z.object({ area: z.enum(["studio", "dashboard", "commandCenter", "agenda"]) });
 export const getFirstUseTour = createServerFn({ method: "GET" })
   .middleware([requireAuth]).inputValidator((data) => areaSchema.parse(data))
   .handler(async ({ data, context }) => {
