@@ -123,6 +123,12 @@ export class ErrorBoundary extends Component<Props, State> {
               <Trash2 className="mr-2 h-4 w-4" aria-hidden />
               Reset app &amp; cache
             </Button>
+            <Button asChild variant="outline">
+              <a href={problemReportHref({ name: error.name, message: error.message, stack }, typeof window !== "undefined" ? window.location.pathname : "")}>
+                <Send className="mr-2 h-4 w-4" aria-hidden />
+                Probleem melden
+              </a>
+            </Button>
           </div>
           <div className="pt-1 text-left">
             <button

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw, Send } from "lucide-react";
+import { problemReportHref } from "@/lib/problem-report";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -23,8 +24,7 @@ export function RouteErrorFallback({ error, reset }: { error: Error; reset?: () 
         </span>
         <h1 className="font-display text-xl text-foreground">This page ran into a problem</h1>
         <p className="text-sm text-muted-foreground">
-          Nothing was lost. Try again, or head back to the homepage — if it keeps happening, let us
-          know via the contact page.
+          Nothing was lost. Try again, or head back to the homepage — if it keeps happening, send us the report below — the error details are filled in for you.
         </p>
         <p className="break-words rounded-xl bg-muted/50 px-3 py-2 text-left font-mono text-xs text-destructive">
           {error.name}: {error.message || "Unknown error"}
@@ -42,6 +42,12 @@ export function RouteErrorFallback({ error, reset }: { error: Error; reset?: () 
           </Button>
           <Button asChild variant="outline">
             <Link to="/">Back to home</Link>
+          </Button>
+          <Button asChild variant="outline" className="gap-2">
+            <a href={problemReportHref(error, typeof window !== "undefined" ? window.location.pathname : "")}>
+              <Send className="h-4 w-4" aria-hidden />
+              Report this problem
+            </a>
           </Button>
         </div>
       </div>
