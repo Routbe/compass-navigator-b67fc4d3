@@ -23,7 +23,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ErrorBoundary, StaleChunkReload, willAutoReload } from "@/components/ErrorBoundary";
 import { LanguageSync } from "@/components/LanguageSync";
 import "@/lib/env";
 import { notFound, redirect } from "@tanstack/react-router";
@@ -71,12 +71,14 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const [stale] = useState(() => willAutoReload(error));
   console.error(error);
   const router = useRouter();
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
 
+  if (stale) return <StaleChunkReload error={error} />;
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">

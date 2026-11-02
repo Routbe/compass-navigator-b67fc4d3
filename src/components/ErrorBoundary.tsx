@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, RotateCcw, ChevronDown, Trash2, Send } from "lucide-react";
 import { problemReportHref } from "@/lib/problem-report";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,30 @@ export function reloadForStaleChunk(error: unknown): boolean {
   return true;
 }
 
+/** True when this error is a stale-deploy chunk miss that a single reload will fix. */
+export function willAutoReload(error: unknown): boolean {
+  if (typeof window === "undefined") return false;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (!STALE_RE.test(message)) return false;
+  try {
+    const last = Number(window.sessionStorage.getItem(RELOAD_KEY) ?? 0);
+    return Date.now() - last >= 30_000;
+  } catch {
+    return false;
+  }
+}
+
+/** Quiet screen shown instead of the crash card while a new version loads. */
+export function StaleChunkReload({ error }: { error: unknown }) {
+  useEffect(() => { reloadForStaleChunk(error); }, [error]);
+  return (
+    <div role="status" aria-live="polite" className="flex min-h-[60vh] w-full items-center justify-center px-4 py-10 text-sm text-muted-foreground">
+      <RotateCcw className="mr-2 h-4 w-4 animate-spin" aria-hidden /> Nieuwe versie laden…
+    </div>
+  );
+}
+
+
 if (typeof window !== "undefined") {
   window.addEventListener("vite:preloadError", (event) => {
     if (reloadForStaleChunk((event as Event & { payload?: unknown }).payload ?? new Error("Failed to fetch dynamically imported module"))) event.preventDefault();
@@ -43,11 +67,12 @@ if (typeof window !== "undefined") {
 
 export class ErrorBoundary extends Component<Props, State> {
   override state: State = { error: null, info: null, detailsOpen: false };
+  private reloading = false;
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    if (reloadForStaleChunk(error)) return;
+    if (reloadForStaleChunk(error)) { this.reloading = true; return; }
     console.error("[ErrorBoundary]", this.props.label ?? "app", error, info);
     this.setState({ info });
   }
@@ -87,6 +112,7 @@ export class ErrorBoundary extends Component<Props, State> {
   override render() {
     const { error, info, detailsOpen } = this.state;
     if (!error) return this.props.children;
+    if (!this.props.inline && STALE_RE.test(error.message) && (willAutoReload(error) || this.reloading)) return <StaleChunkReload error={error} />;
     const stack = [error.stack ?? `${error.name}: ${error.message}`, info?.componentStack]
       .filter(Boolean)
       .join("\n\n");
