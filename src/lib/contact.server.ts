@@ -24,14 +24,12 @@ export interface ContactPayload {
   submittedAt?: string;
 }
 
-import { brevoKeyStatus } from "@/lib/brevo-key";
-
-const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+import { postmarkTokenStatus } from "@/lib/postmark-key";
 
 function brevoKey(): string | null {
-  const { key, error } = brevoKeyStatus();
-  if (!key) console.error(`[contact] ${error}`);
-  return key;
+  const { token, error } = postmarkTokenStatus();
+  if (!token) console.error(`[contact] ${error}`);
+  return token;
 }
 
 function senderAddress(): { name: string; email: string } {
