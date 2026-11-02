@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderAuthMail } from "./design/mails";
-import { transactionalTags, TRACKING_OFF_HEADERS } from "./send.server";
+import { transactionalTags, buildPostmarkPayload } from "./send.server";
 import { authPlainText } from "@/lib/email.server";
 
 const LINK = "https://rout.be/api/auth/magic-link/verify?token=abc";
@@ -25,8 +25,13 @@ describe("auth mail deliverability", () => {
 
   it("tags login mails otp+auth and disables open/click tracking", () => {
     expect(transactionalTags("login")).toEqual(expect.arrayContaining(["transactional", "auth", "otp"]));
-    expect(TRACKING_OFF_HEADERS["X-Mailin-Track-Opens"]).toBe("0");
-    expect(TRACKING_OFF_HEADERS["X-Mailin-Track-Clicks"]).toBe("0");
+    const p = buildPostmarkPayload({ to: "jan@example.com", subject: "s", html, text: "t", category: "login", correlationId: "c" });
+    expect(p["TrackOpens"]).toBe(false);
+    expect(p["TrackLinks"]).toBe("None");
+  });
+
+  it("darkens natively for dark-mode readers", () => {
+    expect(html).toContain("@media (prefers-color-scheme: dark)");
   });
 
   it("sends a plain-text part with code and link and no HTML", () => {

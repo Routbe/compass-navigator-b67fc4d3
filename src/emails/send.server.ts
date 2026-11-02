@@ -1,55 +1,34 @@
 /**
- * Central transactional mailer — Brevo only.
+ * Central transactional mailer — Postmark, transactional stream only.
  *
- * Every system e-mail in ROUT (auth links, notifications, alias confirmations,
- * payment follow-ups) goes through this one function. One API key, one
- * dashboard, one set of SPF/DKIM records on our own domain.
+ * Every system e-mail in ROUT (sign-in codes, security notices, Chronos
+ * warnings, receipts) goes through `sendMail`. The payload is built by the
+ * pure `buildPostmarkPayload` so the privacy guarantees are testable:
+ *   - TrackOpens false, TrackLinks "None": no pixel, links stay pure https://rout.be/…
+ *   - MessageStream "outbound": Postmark's transactional stream (never broadcast)
+ *   - no List-Unsubscribe / List-* / Precedence headers, ever
+ *   - X-Entity-Ref-ID per message so clients never thread unrelated codes
+ *   - fixed system senders on rout.be
  *
- * Delivery cascade (see src/emails/template-ids.ts for the ID scheme):
- *   1. target template   = category base + language offset
- *   2. category fallback = category base + 9   → + admin alert (#11)
- *   3. global fallback   = #21                 → + admin alert (#11)
- *   4. inline HTML/text body rendered by us    → + admin alert (#11)
- *
- * Never throws: a failing mail must not break a webhook or a sign-up. The
- * boolean result plus a logged provider body is the contract.
+ * Never throws: a failing mail must not break a webhook or a sign-up.
  */
 
 import { maskEmail } from "@/lib/security/redact";
-import {
-  adminAlertTemplateId,
-  brevoTemplateId,
-  globalFallbackTemplateId,
-  reserveTemplateId,
-  type EmailCategory,
-} from "./template-ids";
+import { postmarkTokenStatus, describePostmarkFailure } from "@/lib/postmark-key";
+import type { EmailCategory } from "./template-ids";
 
-import { brevoKeyStatus, describeBrevoFailure } from "@/lib/brevo-key";
+export const POSTMARK_ENDPOINT = "https://api.postmarkapp.com/email";
+export const MESSAGE_STREAM = "outbound";
+export const AUTH_SENDER = "ROUT <auth@rout.be>";
+export const SYSTEM_SENDER = "ROUT <system@rout.be>";
 
-/** Privacy: ask Brevo not to add open pixels or rewrite links for click tracking. */
-export const TRACKING_OFF_HEADERS = {
-  "X-Mailin-Track": "0",
-  "X-Mailin-Track-Opens": "0",
-  "X-Mailin-Track-Clicks": "0",
-  // Transactional, never a list/campaign: keeps login mails out of "Promotions".
-  "X-Mailin-Tag": "transactional",
-} as const;
-
-/** Categories that carry the extra "security" tag. */
+/** Categories sent from auth@rout.be; everything else uses system@rout.be. */
 const SECURITY_CATEGORIES = new Set([
   "login", "recovery", "email_change", "reauthentication", "confirmation", "security", "merge", "deletion",
 ]);
 
-/** Every mail is tagged transactional (+ security for auth mails); caller tags are kept. */
-export function transactionalTags(category?: string, extra?: string[]): string[] {
-  const tags = ["transactional"];
-  if (category && SECURITY_CATEGORIES.has(category)) tags.push("security", "auth");
-  if (category === "login") tags.push("otp");
-  for (const t of extra ?? []) if (t && !tags.includes(t)) tags.push(t);
-  return tags;
-}
-
-const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+/** Headers that would make a client treat the mail as a list or newsletter. */
+const FORBIDDEN_HEADER = /^(list-|precedence$|x-mailin-|x-campaign|feedback-id$)/i;
 
 export interface MailOptions {
   notificationUserId?: string;
@@ -57,23 +36,18 @@ export interface MailOptions {
   subject?: string;
   html?: string;
   text?: string;
+  /** Legacy (former provider templates); ignored — every mail is rendered by us. */
   templateId?: number;
-  /** Decimal template hierarchy: category + language decide the Brevo ID. */
   category?: EmailCategory;
   language?: unknown;
+  /** Legacy template params; only logged as a redacted summary. */
   params?: Record<string, unknown>;
   replyTo?: { email: string; name?: string };
   tags?: string[];
-  /** Bijlagen (bv. de PDF-factuur), base64-gecodeerd. */
   attachments?: { name: string; contentBase64: string }[];
-  /**
-   * Email-as-code: send our rendered `html` first and only fall back to the
-   * Brevo template cascade when that send is refused.
-   */
+  /** Legacy flag; our rendered HTML is always the only body. */
   htmlFirst?: boolean;
-  /** Internal: suppress admin alerts (used by the alert mail itself). */
   skipAdminAlert?: boolean;
-  /** Ties every log line of one logical send together; generated when absent. */
   correlationId?: string;
 }
 
@@ -84,29 +58,23 @@ export interface AdminAlertParams {
   REASON: string;
 }
 
-function brevoKey(): string | null {
-  return brevoKeyStatus().key;
+/** Every mail is tagged transactional (+ security for auth mails); caller tags are kept. */
+export function transactionalTags(category?: string, extra?: string[]): string[] {
+  const tags = ["transactional"];
+  if (category && SECURITY_CATEGORIES.has(category)) tags.push("security", "auth");
+  if (category === "login") tags.push("otp");
+  for (const t of extra ?? []) if (t && !tags.includes(t)) tags.push(t);
+  return tags;
 }
 
-/** Visible sender; must be a domain verified in Brevo. */
-function sender(): { name: string; email: string } {
-  const from = process.env["EMAIL_FROM"] ?? "";
-  const match = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(from);
-  return {
-    name: process.env["BREVO_SENDER_NAME"] ?? match?.[1] ?? "ROUT",
-    email:
-      process.env["BREVO_SENDER_EMAIL"] ??
-      match?.[2] ??
-      (from.includes("@") ? from.trim() : "noreply@send.rout.be"),
-  };
+export function senderFor(category?: string, tags?: string[]): string {
+  const auth = (category && SECURITY_CATEGORIES.has(category)) || tags?.some((t) => t === "auth" || t === "otp");
+  return auth ? AUTH_SENDER : SYSTEM_SENDER;
 }
 
-/** Where customer replies land: the Infomaniak mailbox. */
-function defaultReplyTo(): { email: string; name?: string } {
-  return {
-    email: process.env["BREVO_REPLY_TO_EMAIL"] ?? "hallo@rout.be",
-    name: process.env["BREVO_SENDER_NAME"] ?? "ROUT",
-  };
+function formatAddress(a: { email: string; name?: string }): string {
+  const name = a.name?.replace(/["\r\n]/g, "").trim();
+  return name ? `"${name}" <${a.email}>` : a.email;
 }
 
 function adminAddress(): string {
@@ -114,87 +82,15 @@ function adminAddress(): string {
 }
 
 export function isMailConfigured(): boolean {
-  return brevoKey() !== null;
+  return postmarkTokenStatus().token !== null;
 }
 
-/** Correlation id shared by every log line and Brevo attempt of one send. */
 export function newCorrelationId(): string {
   const rand = Math.random().toString(36).slice(2, 8);
   return `mail_${Date.now().toString(36)}_${rand}`;
 }
 
-/** Rate limits and provider hiccups are worth retrying; a 4xx refusal is not. */
-function isTransient(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
-}
-
-const MAX_ATTEMPTS = 3;
-const BACKOFF_MS = [400, 1200];
-
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/**
- * One Brevo API call with a bounded retry on transient failures (429 / 5xx /
- * network). Returns the provider status + body on definitive failure.
- */
-async function postToBrevo(
-  key: string,
-  body: Record<string, unknown>,
-  label: string,
-  correlationId = newCorrelationId(),
-): Promise<{ sent: boolean; error?: string }> {
-  let lastError = "Could not reach the mail provider.";
-
-  for (let try_ = 1; try_ <= MAX_ATTEMPTS; try_++) {
-    try {
-      const res = await fetch(BREVO_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          "api-key": key,
-          "x-correlation-id": correlationId,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status !== 201 && !res.ok) {
-        const detail = (await res.text().catch(() => "")).slice(0, 500);
-        lastError = describeBrevoFailure(res.status, detail);
-        console.error(`[Brevo API Error] ${label} failed [${res.status}]`, {
-          correlationId,
-          try: `${try_}/${MAX_ATTEMPTS}`,
-          detail,
-        });
-        if (!isTransient(res.status) || try_ === MAX_ATTEMPTS) {
-          return { sent: false, error: lastError };
-        }
-      } else {
-        console.info(`[Mailer] ${label} sent`, {
-          correlationId,
-          status: res.status,
-          try: try_,
-        });
-        return { sent: true };
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : "Could not reach the mail provider.";
-      console.error(`[Mailer] ${label} threw`, {
-        correlationId,
-        try: `${try_}/${MAX_ATTEMPTS}`,
-        error: lastError,
-      });
-      if (try_ === MAX_ATTEMPTS) return { sent: false, error: lastError };
-    }
-
-    await wait(BACKOFF_MS[try_ - 1] ?? 1200);
-    console.warn(`[Mailer] retrying ${label}`, { correlationId, nextTry: try_ + 1 });
-  }
-
-  return { sent: false, error: lastError };
-}
-
-function textFromHtml(html: string): string {
+export function textFromHtml(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<[^>]+>/g, " ")
@@ -203,276 +99,161 @@ function textFromHtml(html: string): string {
     .trim();
 }
 
-/**
- * Log-safe view of the template params: only the keys and value lengths are
- * logged, so a broken template variable stays visible while names, e-mail
- * addresses, message text, links and codes never reach a log.
- */
+function mimeFor(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "txt" ? "text/plain" : ext === "ics" ? "text/calendar" : "application/octet-stream";
+}
+
+/** Pure payload builder: the single place the privacy rules are enforced. */
+export function buildPostmarkPayload(input: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  category?: string;
+  tags?: string[];
+  replyTo?: { email: string; name?: string };
+  attachments?: { name: string; contentBase64: string }[];
+  correlationId: string;
+  extraHeaders?: Record<string, string>;
+}): Record<string, unknown> {
+  const headers = [{ Name: "X-Entity-Ref-ID", Value: input.correlationId }];
+  for (const [Name, Value] of Object.entries(input.extraHeaders ?? {})) {
+    if (!FORBIDDEN_HEADER.test(Name) && Name.toLowerCase() !== "x-entity-ref-id") headers.push({ Name, Value });
+  }
+  const tags = transactionalTags(input.category, input.tags);
+  return {
+    From: senderFor(input.category, input.tags),
+    To: input.to,
+    ReplyTo: formatAddress(input.replyTo ?? { email: "hallo@rout.be", name: "ROUT" }),
+    Subject: input.subject,
+    HtmlBody: input.html,
+    TextBody: input.text,
+    // Postmark allows one tag; the most specific one wins.
+    Tag: tags[tags.length - 1],
+    Metadata: { category: input.category ?? "none", ref: input.correlationId },
+    Headers: headers,
+    TrackOpens: false,
+    TrackLinks: "None",
+    MessageStream: MESSAGE_STREAM,
+    ...(input.attachments?.length
+      ? { Attachments: input.attachments.map((f) => ({ Name: f.name, Content: f.contentBase64, ContentType: mimeFor(f.name) })) }
+      : {}),
+  };
+}
+
+const isTransient = (status: number) => status === 408 || status === 429 || status >= 500;
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MS = [400, 1200];
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function postToPostmark(token: string, body: Record<string, unknown>, label: string, correlationId: string): Promise<{ sent: boolean; error?: string }> {
+  let lastError = "Could not reach the mail provider.";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(POSTMARK_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json", "X-Postmark-Server-Token": token },
+        body: JSON.stringify(body),
+      });
+      const detail = (await res.text().catch(() => "")).slice(0, 500);
+      let code = 0;
+      try { code = Number((JSON.parse(detail) as { ErrorCode?: number }).ErrorCode ?? 0); } catch { /* non-JSON */ }
+      if (res.ok && code === 0) {
+        console.info(`[Mailer] ${label} sent`, { correlationId, try: attempt });
+        return { sent: true };
+      }
+      lastError = describePostmarkFailure(res.status, detail);
+      console.error(`[Postmark API Error] ${label} failed [${res.status}]`, { correlationId, try: `${attempt}/${MAX_ATTEMPTS}`, detail });
+      if (!isTransient(res.status) || attempt === MAX_ATTEMPTS) return { sent: false, error: lastError };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+      console.error(`[Mailer] ${label} threw`, { correlationId, try: `${attempt}/${MAX_ATTEMPTS}`, error: lastError });
+      if (attempt === MAX_ATTEMPTS) return { sent: false, error: lastError };
+    }
+    await wait(BACKOFF_MS[attempt - 1] ?? 1200);
+  }
+  return { sent: false, error: lastError };
+}
+
+/** Log-safe view of params: keys and lengths only. */
 export function summariseParams(params?: Record<string, unknown>): Record<string, string> {
   if (!params) return {};
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(params)) {
-    if (value === null || value === undefined || value === "") {
-      out[key] = "(empty)";
-      continue;
-    }
+    if (value === null || value === undefined || value === "") { out[key] = "(empty)"; continue; }
     const text = typeof value === "string" ? value : JSON.stringify(value) ?? "";
-    out[key] = SAFE_PARAM_KEYS.has(key.toUpperCase()) && /^[a-z-]{2,10}$/i.test(text)
-      ? text
-      : `<${text.length} chars>`;
+    out[key] = SAFE_PARAM_KEYS.has(key.toUpperCase()) && /^[a-z-]{2,10}$/i.test(text) ? text : `<${text.length} chars>`;
   }
   return out;
 }
-
-/** Only these short, non-personal settings are logged verbatim. */
 const SAFE_PARAM_KEYS = new Set(["LANG", "LANGUAGE", "LOCALE"]);
 
-/**
- * Fire-and-forget admin alert (Template #11) telling the team exactly which
- * template failed and which fallback carried the message instead.
- */
+const escapeHtml = (v: string) => v.replace(/[&<>"]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;"));
+
+/** Fire-and-forget alert to the team when a mail could not be delivered. */
 export function notifyAdminOfFallback(params: AdminAlertParams): void {
-  const key = brevoKey();
-  const templateId = adminAlertTemplateId();
-  if (!key) {
-    console.error("[Mailer Alert] Cannot send admin alert — BREVO_API_KEY is missing", params);
-    return;
-  }
-  const body: Record<string, unknown> = {
-    sender: sender(),
-    to: [{ email: adminAddress() }],
-    templateId,
-    params,
-    replyTo: defaultReplyTo(),
-    headers: TRACKING_OFF_HEADERS,
-    tags: transactionalTags("system", ["mailer-fallback-alert"]),
-  };
-  void postToBrevo(key, body, `admin alert template #${templateId}`).then((res) => {
-    if (!res.sent) {
-      // Last resort: an inline alert so the failure is never invisible.
-      void postToBrevo(
-        key,
-        {
-          sender: sender(),
-          to: [{ email: adminAddress() }],
-          subject: `[ROUT] Mail fallback: template ${params.FAILED_TEMPLATE_ID} failed`,
-          htmlContent:
-            `<p>Template <strong>${params.FAILED_TEMPLATE_ID}</strong> failed.</p>` +
-            `<p>Used fallback: <strong>${params.USED_FALLBACK_ID}</strong></p>` +
-            `<p>Recipient: ${params.RECIPIENT_EMAIL}</p>` +
-            `<p>Reason: ${params.REASON}</p>`,
-          headers: TRACKING_OFF_HEADERS,
-    tags: transactionalTags("system", ["mailer-fallback-alert"]),
-        },
-        "admin alert inline fallback",
-      );
-    }
+  void sendMail({
+    to: adminAddress(),
+    subject: `[ROUT] Mail niet afgeleverd (${params.FAILED_TEMPLATE_ID})`,
+    category: "system",
+    language: "nl",
+    skipAdminAlert: true,
+    tags: ["mailer-alert"],
+    html:
+      `<p>Een systeemmail kon niet worden afgeleverd.</p>` +
+      `<p>Onderdeel: <strong>${escapeHtml(String(params.FAILED_TEMPLATE_ID))}</strong><br>` +
+      `Ontvanger: ${escapeHtml(maskEmail(params.RECIPIENT_EMAIL))}<br>` +
+      `Reden: ${escapeHtml(params.REASON)}</p>`,
   });
 }
 
-interface Attempt {
-  label: string;
-  id: number | "inline";
-  body: Record<string, unknown>;
-}
-
-/**
- * Sends one transactional mail through the four-step cascade described above.
- * Every failing step logs the exact Brevo status/body and alerts the admin.
- */
 export async function sendMail(opts: MailOptions): Promise<{ sent: boolean; error?: string }> {
-  let listHeaders: Record<string, string> = {};
   if (opts.notificationUserId) {
     try {
       const { notificationMailPolicy } = await import("@/lib/email/unsubscribe.server");
       const policy = await notificationMailPolicy(opts.notificationUserId, opts.category, opts.tags);
+      // Preference is honoured in-app; list headers are never attached.
       if (!policy.allowed) return { sent: false, error: "Notification email disabled by recipient." };
-      listHeaders = policy.headers;
     } catch {
       return { sent: false, error: "Notification preference check unavailable." };
     }
   }
-  const { key, error: keyError } = brevoKeyStatus();
   const correlationId = opts.correlationId ?? newCorrelationId();
-  if (!key) {
-    console.error(`[Mailer] ${keyError}`, {
-      correlationId,
-      subject: opts.subject,
-      to: maskEmail(opts.to),
-    });
-    return { sent: false, error: keyError ?? "E-mailverzending is niet geconfigureerd." };
+  const { token, error: tokenError } = postmarkTokenStatus();
+  if (!token) {
+    console.error(`[Mailer] ${tokenError}`, { correlationId, to: maskEmail(opts.to) });
+    return { sent: false, error: tokenError ?? "E-mailverzending is niet geconfigureerd." };
+  }
+  if (!opts.html && !opts.text) {
+    console.error("[Mailer] nothing to send: no body supplied", { correlationId, category: opts.category ?? "(none)" });
+    return { sent: false, error: "No body was provided for this e-mail." };
   }
 
-  const base: Record<string, unknown> = {
-    sender: sender(),
-    to: [{ email: opts.to }],
-    ...(opts.subject ? { subject: opts.subject } : {}),
-    ...(opts.params ? { params: opts.params } : {}),
-    replyTo: opts.replyTo ?? defaultReplyTo(),
-    headers: { ...TRACKING_OFF_HEADERS, ...listHeaders },
-    tags: transactionalTags(opts.category, opts.tags),
-    ...(opts.attachments?.length
-      ? {
-          attachment: opts.attachments.map((file) => ({
-            name: file.name,
-            content: file.contentBase64,
-          })),
-        }
-      : {}),
-  };
-
-  const attempts: Attempt[] = [];
-
-  // 1 — target template (base + language offset), or an explicit override.
-  const targetTemplateId =
-    opts.templateId ?? (opts.category ? brevoTemplateId(opts.category, opts.language) : null);
-  if (targetTemplateId) {
-    attempts.push({
-      label: `template #${targetTemplateId}`,
-      id: targetTemplateId,
-      body: { ...base, templateId: targetTemplateId },
-    });
+  let html = opts.html ?? `<pre>${escapeHtml(opts.text ?? "")}</pre>`;
+  if (!/<html[\s>]/i.test(html)) {
+    const { brandHtml } = await import("./react/branded.server");
+    const branded = await brandHtml(html, { language: opts.language, preview: opts.subject, ...(opts.category ? { category: opts.category } : {}) });
+    if (branded) html = branded;
   }
+  const text = opts.text ?? textFromHtml(html);
 
-  // 2 — category fallback (0 = the category has no template in Brevo).
-  if (opts.category) {
-    const reserve = reserveTemplateId(opts.category);
-    if (reserve && reserve !== targetTemplateId) {
-      attempts.push({
-        label: `category fallback template #${reserve}`,
-        id: reserve,
-        body: { ...base, templateId: reserve },
-      });
-    }
-  }
-
-  // 3 — global customer fallback (#21).
-  const globalId = globalFallbackTemplateId();
-  if (!attempts.some((a) => a.id === globalId)) {
-    attempts.push({
-      label: `global fallback template #${globalId}`,
-      id: globalId,
-      body: { ...base, templateId: globalId },
-    });
-  }
-
-  // 4 — our own rendered body. Fragments get the ROUT frame and go first
-  // (email as code); Brevo templates stay as the safety net.
-  if (opts.html || opts.text) {
-    let html = opts.html ?? `<pre>${opts.text}</pre>`;
-    const text = opts.text ?? textFromHtml(html);
-    let first = Boolean(opts.htmlFirst && opts.html);
-    if (opts.html && !/<html[\s>]/i.test(opts.html)) {
-      const { brandHtml } = await import("./react/branded.server");
-      const branded = await brandHtml(opts.html, {
-        language: opts.language,
-        preview: opts.subject,
-        ...(opts.category ? { category: opts.category } : {}),
-      });
-      if (branded) {
-        html = branded;
-        first = true;
-      }
-    }
-    attempts[first ? "unshift" : "push"]({
-      label: "inline HTML body",
-      id: "inline",
-      body: {
-        ...base,
-        subject: opts.subject ?? "ROUT",
-        htmlContent: html,
-        textContent: text,
-      },
-    });
-  }
-
-  if (attempts.length === 0) {
-    console.error("[Mailer] nothing to send: no templateId, category or body supplied", {
-      correlationId,
-    });
-    return { sent: false, error: "No template or body was provided for this e-mail." };
-  }
-
-  const cascade = attempts.map((a) => a.id);
-  const paramSummary = summariseParams(opts.params);
-  console.info("[Mailer] delivery plan", {
+  const body = buildPostmarkPayload({
+    to: opts.to,
+    subject: opts.subject ?? "ROUT",
+    html,
+    text,
+    ...(opts.category ? { category: opts.category } : {}),
+    ...(opts.tags ? { tags: opts.tags } : {}),
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+    ...(opts.attachments ? { attachments: opts.attachments } : {}),
     correlationId,
-    to: maskEmail(opts.to),
-    category: opts.category ?? "(none)",
-    language: opts.language ?? "(default)",
-    cascade,
-    params: paramSummary,
   });
+  console.info("[Mailer] sending", { correlationId, to: maskEmail(opts.to), category: opts.category ?? "(none)", params: summariseParams(opts.params) });
 
-  let lastError = "Brevo did not accept this message.";
-  for (let i = 0; i < attempts.length; i++) {
-    const attempt = attempts[i]!;
-    console.info(
-      `[Mailer] attempt ${i + 1}/${attempts.length} — template ${attempt.id} → ${maskEmail(opts.to)}`,
-      { correlationId },
-    );
-    const result = await postToBrevo(key, attempt.body, attempt.label, correlationId);
-    // The admin alert for a fallback is emitted at the moment the previous
-    // template failed, so a successful attempt needs no extra notification.
-    if (result.sent) {
-      if (i > 0) {
-        console.warn("[Mailer Fallback] delivered via fallback", {
-          correlationId,
-          category: opts.category ?? "(none)",
-          language: opts.language ?? "(default)",
-          failedTemplateIds: cascade.slice(0, i),
-          deliveredWithTemplateId: attempt.id,
-          attempt: `${i + 1}/${attempts.length}`,
-          recipient: maskEmail(opts.to),
-          params: paramSummary,
-        });
-      }
-      return { sent: true };
-    }
-    lastError = result.error ?? lastError;
-    const next = attempts[i + 1];
-    if (next) {
-      console.warn("[Mailer Fallback] template failed — falling back", {
-        correlationId,
-        category: opts.category ?? "(none)",
-        language: opts.language ?? "(default)",
-        failedTemplateId: attempt.id,
-        failedTemplateLabel: attempt.label,
-        fallbackTemplateId: next.id,
-        fallbackLabel: next.label,
-        remainingCascade: cascade.slice(i + 1),
-        adminAlertTemplateId: adminAlertTemplateId(),
-        recipient: maskEmail(opts.to),
-        reason: lastError,
-        params: paramSummary,
-      });
-      if (!opts.skipAdminAlert) {
-        notifyAdminOfFallback({
-          FAILED_TEMPLATE_ID: attempt.id,
-          USED_FALLBACK_ID: next.id,
-          RECIPIENT_EMAIL: opts.to,
-          REASON: `${lastError} [${correlationId}]`,
-        });
-      }
-    }
+  const result = await postToPostmark(token, body, `${opts.category ?? "mail"}`, correlationId);
+  if (!result.sent && !opts.skipAdminAlert) {
+    notifyAdminOfFallback({ FAILED_TEMPLATE_ID: opts.category ?? "mail", USED_FALLBACK_ID: "none", RECIPIENT_EMAIL: opts.to, REASON: `${result.error ?? "unknown"} [${correlationId}]` });
   }
-
-  console.error("[Mailer] all delivery attempts failed", {
-    correlationId,
-    category: opts.category ?? "(none)",
-    language: opts.language ?? "(default)",
-    triedTemplateIds: cascade,
-    recipient: maskEmail(opts.to),
-    reason: lastError,
-    params: paramSummary,
-  });
-  if (!opts.skipAdminAlert) {
-    notifyAdminOfFallback({
-      FAILED_TEMPLATE_ID: attempts[attempts.length - 1]!.id,
-      USED_FALLBACK_ID: "none",
-      RECIPIENT_EMAIL: opts.to,
-      REASON: lastError,
-    });
-  }
-  return { sent: false, error: lastError };
+  return result;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSyncPlan } from "./brevo-sync-plan";
 import { BREVO_KINDS, brevoTemplate, renderAuthMail } from "./design/mails";
 import { EMAIL_LANGUAGES } from "./template-ids";
-import { TRACKING_OFF_HEADERS, transactionalTags } from "./send.server";
+import { buildPostmarkPayload, transactionalTags } from "./send.server";
 
 const UNSUB = /unsubscribe|\[UNSUBSCRIBE\]|\{\{\s*unsubscribe|mirror|afmelden/i;
 
@@ -11,8 +11,8 @@ describe("transactional marking", () => {
     expect(transactionalTags("payment")).toEqual(["transactional"]);
     expect(transactionalTags("login", ["x"])).toEqual(["transactional", "security", "auth", "otp", "x"]);
   });
-  it("sends the X-Mailin-Tag transactional header", () => {
-    expect(TRACKING_OFF_HEADERS["X-Mailin-Tag"]).toBe("transactional");
+  it("always uses the transactional message stream", () => {
+    expect(buildPostmarkPayload({ to: "a@b.be", subject: "s", html: "h", text: "t", correlationId: "c" })["MessageStream"]).toBe("outbound");
   });
 });
 
