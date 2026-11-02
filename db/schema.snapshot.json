@@ -49,6 +49,42 @@
     },
     {
       "schema": "public",
+      "name": "parent_action_type",
+      "labels": [
+        "consent",
+        "payment"
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "parent_authorization_status",
+      "labels": [
+        "pending",
+        "approved",
+        "expired"
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "parent_consent_status",
+      "labels": [
+        "none",
+        "pending",
+        "approved"
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "qa_permission_level",
+      "labels": [
+        "disabled",
+        "verified_only",
+        "members_only",
+        "public_unrestricted"
+      ]
+    },
+    {
+      "schema": "public",
       "name": "root_redirect_kind",
       "labels": [
         "profile_hub",
@@ -12233,6 +12269,117 @@
     },
     {
       "schema": "public",
+      "name": "parent_authorizations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "notNull": true,
+          "default": "gen_random_uuid()",
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "notNull": true,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "token",
+          "type": "text",
+          "notNull": true,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "action_type",
+          "type": "parent_action_type",
+          "notNull": true,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "product_details",
+          "type": "jsonb",
+          "notNull": true,
+          "default": "'{}'::jsonb",
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "status",
+          "type": "parent_authorization_status",
+          "notNull": true,
+          "default": "'pending'::parent_authorization_status",
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "default": "now()",
+          "identity": null,
+          "generated": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "parent_authorizations_pkey",
+          "kind": "p",
+          "def": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "parent_authorizations_token_hex",
+          "kind": "c",
+          "def": "CHECK ((token ~ '^[0-9a-f]{64}$'::text))"
+        },
+        {
+          "name": "parent_authorizations_user_id_fkey",
+          "kind": "f",
+          "def": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX parent_authorizations_user ON public.parent_authorizations USING btree (user_id)",
+        "CREATE UNIQUE INDEX parent_authorizations_token ON public.parent_authorizations USING btree (token)"
+      ],
+      "triggers": [],
+      "rls": true,
+      "forceRls": false,
+      "policies": [
+        {
+          "name": "rout_owner_read",
+          "permissive": true,
+          "roles": [
+            "public"
+          ],
+          "cmd": "SELECT",
+          "using": "(user_id = rout_current_user_id())",
+          "check": null
+        }
+      ],
+      "grants": {
+        "rout_app": [
+          "SELECT"
+        ]
+      }
+    },
+    {
+      "schema": "public",
       "name": "phone_otp_codes",
       "columns": [
         {
@@ -20277,6 +20424,46 @@
           "default": null,
           "identity": null,
           "generated": null
+        },
+        {
+          "name": "date_of_birth",
+          "type": "date",
+          "notNull": false,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "is_minor",
+          "type": "boolean",
+          "notNull": true,
+          "default": "false",
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "parent_email",
+          "type": "text",
+          "notNull": false,
+          "default": null,
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "parent_consent_status",
+          "type": "parent_consent_status",
+          "notNull": true,
+          "default": "'none'::parent_consent_status",
+          "identity": null,
+          "generated": null
+        },
+        {
+          "name": "qa_permission_level",
+          "type": "qa_permission_level",
+          "notNull": true,
+          "default": "'public_unrestricted'::qa_permission_level",
+          "identity": null,
+          "generated": null
         }
       ],
       "constraints": [
@@ -20291,6 +20478,11 @@
           "def": "FOREIGN KEY (auth_user_id) REFERENCES neon_auth.\"user\"(id) ON DELETE CASCADE"
         },
         {
+          "name": "users_date_of_birth_range",
+          "kind": "c",
+          "def": "CHECK (((date_of_birth IS NULL) OR ((date_of_birth > '1900-01-01'::date) AND (date_of_birth <= CURRENT_DATE))))"
+        },
+        {
           "name": "users_latest_audit_hash_check",
           "kind": "c",
           "def": "CHECK (((latest_audit_hash IS NULL) OR (latest_audit_hash ~ '^[0-9a-f]{64}$'::text)))"
@@ -20299,6 +20491,11 @@
           "name": "users_migrated_to_workspace_id_fkey",
           "kind": "f",
           "def": "FOREIGN KEY (migrated_to_workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL"
+        },
+        {
+          "name": "users_parent_email_format",
+          "kind": "c",
+          "def": "CHECK (((parent_email IS NULL) OR (parent_email ~ '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'::text)))"
         },
         {
           "name": "users_pkey",
@@ -20314,7 +20511,8 @@
       "triggers": [
         "CREATE TRIGGER disclosure_head_protect BEFORE INSERT OR UPDATE OF latest_audit_hash ON public.users FOR EACH ROW EXECUTE FUNCTION disclosure_head_protect()",
         "CREATE TRIGGER on_user_created AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()",
-        "CREATE TRIGGER reserve_recovery_email BEFORE INSERT OR UPDATE OF email ON public.users FOR EACH ROW EXECUTE FUNCTION reserve_recovery_email()"
+        "CREATE TRIGGER reserve_recovery_email BEFORE INSERT OR UPDATE OF email ON public.users FOR EACH ROW EXECUTE FUNCTION reserve_recovery_email()",
+        "CREATE TRIGGER rout_users_minor_sync BEFORE INSERT OR UPDATE OF date_of_birth ON public.users FOR EACH ROW EXECUTE FUNCTION rout_users_minor_sync()"
       ],
       "rls": true,
       "forceRls": false,
@@ -22934,6 +23132,42 @@
     },
     {
       "schema": "public",
+      "name": "rout_parent_approve_consent",
+      "args": "p_token_hash text",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_parent_approve_consent(p_token_hash text)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare v_user uuid;\nbegin\n  update public.parent_authorizations set status = 'approved'\n   where token = p_token_hash and action_type = 'consent' and status = 'pending' and expires_at > now()\n   returning user_id into v_user;\n  if v_user is null then\n    return exists (select 1 from public.parent_authorizations where token = p_token_hash and action_type = 'consent' and status = 'approved');\n  end if;\n  update public.users set parent_consent_status = 'approved' where id = v_user;\n  return true;\nend $function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_parent_lookup",
+      "args": "p_token_hash text",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_parent_lookup(p_token_hash text)\n RETURNS TABLE(action_type parent_action_type, status parent_authorization_status, expires_at timestamp with time zone, product_details jsonb, child_email text, consent parent_consent_status, qa_level qa_permission_level, child_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select a.action_type,\n         case when a.status = 'pending' and a.expires_at < now() then 'expired'::public.parent_authorization_status else a.status end,\n         a.expires_at, a.product_details, u.email, u.parent_consent_status, u.qa_permission_level, u.id\n    from public.parent_authorizations a join public.users u on u.id = a.user_id\n   where a.token = p_token_hash\n   limit 1\n$function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_parent_mark_payment",
+      "args": "p_token_hash text",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_parent_mark_payment(p_token_hash text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare v_user uuid;\nbegin\n  update public.parent_authorizations set status = 'approved'\n   where token = p_token_hash and action_type = 'payment' and status = 'pending' and expires_at > now()\n   returning user_id into v_user;\n  return v_user;\nend $function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_parent_request_payment",
+      "args": "p_user_id uuid, p_token_hash text, p_details jsonb",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_parent_request_payment(p_user_id uuid, p_token_hash text, p_details jsonb)\n RETURNS text\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare v_parent text;\nbegin\n  select parent_email into v_parent from public.users where id = p_user_id and parent_email is not null;\n  if v_parent is null then return null; end if;\n  insert into public.parent_authorizations (user_id, token, action_type, product_details, expires_at)\n  values (p_user_id, p_token_hash, 'payment', coalesce(p_details, '{}'::jsonb), now() + interval '48 hours');\n  return v_parent;\nend $function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_parent_set_qa_level",
+      "args": "p_token_hash text, p_level qa_permission_level",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_parent_set_qa_level(p_token_hash text, p_level qa_permission_level)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare v_user uuid;\nbegin\n  select user_id into v_user from public.parent_authorizations\n   where token = p_token_hash and action_type = 'consent' and (status = 'approved' or (status = 'pending' and expires_at > now()));\n  if v_user is null then return false; end if;\n  update public.users set qa_permission_level = p_level where id = v_user;\n  return true;\nend $function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_profile_qa_level",
+      "args": "p_handle text",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_profile_qa_level(p_handle text)\n RETURNS qa_permission_level\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select case when u.qa_permission_level <> 'public_unrestricted' then u.qa_permission_level\n              when u.date_of_birth > (current_date - interval '16 years') then 'verified_only'::public.qa_permission_level\n              else u.qa_permission_level end\n    from public.profiles p join public.users u on u.id = p.id\n   where lower(p.username) = lower(p_handle)\n   limit 1\n$function$"
+    },
+    {
+      "schema": "public",
       "name": "rout_public_calendar",
       "args": "p_public_id text",
       "def": "CREATE OR REPLACE FUNCTION public.rout_public_calendar(p_public_id text)\n RETURNS TABLE(title text, description text, event_type_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select c.title, c.description, c.event_type_id\n    from public.rout_calendars c\n   where c.public_id = p_public_id\n     and c.is_active\n     and (c.expires_at is null or c.expires_at > now())\n   limit 1\n$function$"
@@ -22958,6 +23192,12 @@
     },
     {
       "schema": "public",
+      "name": "rout_record_signup_age",
+      "args": "p_email text, p_dob date, p_parent_email text, p_token_hash text",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_record_signup_age(p_email text, p_dob date, p_parent_email text, p_token_hash text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare v_id uuid; v_minor boolean;\nbegin\n  select id into v_id from public.users\n   where lower(email) = lower(p_email) and date_of_birth is null and created_at > now() - interval '15 minutes'\n   limit 1;\n  if v_id is null then return null; end if;\n  v_minor := p_dob > (current_date - interval '16 years');\n  update public.users\n     set date_of_birth = p_dob,\n         parent_email = case when v_minor then lower(p_parent_email) else null end,\n         parent_consent_status = case when v_minor then 'pending'::public.parent_consent_status else 'none' end\n   where id = v_id;\n  if v_minor and p_token_hash is not null then\n    insert into public.parent_authorizations (user_id, token, action_type, expires_at)\n    values (v_id, p_token_hash, 'consent', now() + interval '30 days');\n  end if;\n  return v_id;\nend $function$"
+    },
+    {
+      "schema": "public",
       "name": "rout_resolve_account",
       "args": "p_identifier text",
       "def": "CREATE OR REPLACE FUNCTION public.rout_resolve_account(p_identifier text)\n RETURNS TABLE(user_id uuid, email text, username text)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select u.id, u.email, p.username from public.users u left join public.profiles p on p.id = u.id\n  where public.rout_current_user_id() is not null and u.account_status = 'active'\n    and (lower(p.username) = lower(ltrim(p_identifier, '@')) or u.email_normalized = lower(p_identifier))\n  limit 1 $function$"
@@ -22973,6 +23213,18 @@
       "name": "rout_transfers_for_email",
       "args": "p_email text",
       "def": "CREATE OR REPLACE FUNCTION public.rout_transfers_for_email(p_email text)\n RETURNS TABLE(id uuid, source_user_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$ select t.id, t.source_user_id from public.workspace_transfers t\n        where lower(t.target_email) = lower(p_email) and t.target_user_id is null\n          and t.status in ('pending', 'otp_ok') and t.expires_at > now()\n          and t.source_user_id <> public.rout_current_user_id() $function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_user_is_minor",
+      "args": "p_user_id uuid",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_user_is_minor(p_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  select coalesce((select u.date_of_birth > (current_date - interval '16 years') from public.users u where u.id = p_user_id), false)\n$function$"
+    },
+    {
+      "schema": "public",
+      "name": "rout_users_minor_sync",
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.rout_users_minor_sync()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'public'\nAS $function$\nbegin\n  new.is_minor := new.date_of_birth is not null and new.date_of_birth > (current_date - interval '16 years');\n  if new.is_minor and (tg_op = 'INSERT' or old.date_of_birth is distinct from new.date_of_birth) then\n    new.qa_permission_level := 'verified_only';\n  end if;\n  return new;\nend $function$"
     },
     {
       "schema": "public",

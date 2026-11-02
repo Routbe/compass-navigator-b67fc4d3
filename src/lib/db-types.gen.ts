@@ -7,6 +7,10 @@ export type PublicAppCredentialType = "badge" | "certificate" | "diploma";
 export type PublicAppRole = "admin" | "moderator" | "user";
 export type PublicClaimVerificationProvider = "none" | "itsme" | "eidas";
 export type PublicIdentityProvider = "w_identity" | "didit" | "manual";
+export type PublicParentActionType = "consent" | "payment";
+export type PublicParentAuthorizationStatus = "pending" | "approved" | "expired";
+export type PublicParentConsentStatus = "none" | "pending" | "approved";
+export type PublicQaPermissionLevel = "disabled" | "verified_only" | "members_only" | "public_unrestricted";
 export type PublicRootRedirectKind = "profile_hub" | "custom_url" | "rout_main" | "none";
 export type PublicWorkspaceRole = "owner" | "admin" | "developer" | "editor" | "viewer";
 
@@ -1172,6 +1176,17 @@ export interface PublicOnboardingDraftsRow {
   "updated_at": string | Date;
 }
 
+export interface PublicParentAuthorizationsRow {
+  "id": string;
+  "user_id": string;
+  "token": string;
+  "action_type": PublicParentActionType;
+  "product_details": JsonValue;
+  "expires_at": string | Date;
+  "status": PublicParentAuthorizationStatus;
+  "created_at": string | Date;
+}
+
 export interface PublicPhoneOtpCodesRow {
   "id": string;
   "user_id": string;
@@ -1943,6 +1958,11 @@ export interface PublicUsersRow {
   "migrated_to_workspace_id": string | null;
   "auth_user_id": string | null;
   "latest_audit_hash": string | null;
+  "date_of_birth": string | Date | null;
+  "is_minor": boolean;
+  "parent_email": string | null;
+  "parent_consent_status": PublicParentConsentStatus;
+  "qa_permission_level": PublicQaPermissionLevel;
 }
 
 export interface PublicVerificationPaymentsRow {
@@ -2243,6 +2263,7 @@ export interface DbTables {
   "public.oauth_step_up_challenges": PublicOauthStepUpChallengesRow;
   "public.oauth_step_up_codes": PublicOauthStepUpCodesRow;
   "public.onboarding_drafts": PublicOnboardingDraftsRow;
+  "public.parent_authorizations": PublicParentAuthorizationsRow;
   "public.phone_otp_codes": PublicPhoneOtpCodesRow;
   "public.platform_integration_switches": PublicPlatformIntegrationSwitchesRow;
   "public.poll_votes": PublicPollVotesRow;
