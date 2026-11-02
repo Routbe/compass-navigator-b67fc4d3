@@ -17,7 +17,18 @@
       "decision": "The application database stays in the user's own Neon PostgreSQL with better-auth sessions; Lovable Cloud is not used for app data.",
       "decided": "2026-11-02",
       "consequence": "No data-layer rewrite. Reads and writes need the Neon connection plus its secrets before any live data flow works."
+    },
+    {
+      "decision": "Rebuild the offline schema record with the project's own script (bun scripts/schema-replay-snapshot.ts), because the committed db/schema.snapshot.json was stale against db/*.sql.",
+      "decided": "2026-11-02",
+      "consequence": "db/schema.snapshot.json and src/lib/db-types.gen.ts now match a replay of all 174 scripts; the schema replay test passes."
+    },
+    {
+      "decision": "Classify parent_authorizations (db/0174) as 'skip' in the account-merge allowlist: a merge is refused while an account owns a parental consent record.",
+      "decided": "2026-11-02",
+      "consequence": "Consent history is never silently moved or cascade-deleted by a merge. The user should confirm this is the rule they want; reassign or drop are the alternatives."
     }
+
   ],
   "capabilities": [
     {
@@ -142,9 +153,10 @@
     {
       "capability": "verification",
       "source": "vitest suite in src/test + managed preview build",
-      "outcome": "in progress",
-      "status": "pending",
-      "next_action": "Run build, typecheck and the test suite against the imported code."
+      "outcome": "build OK; typecheck clean (tsgo --noEmit); 275 test files / 1539 tests pass (exit 0); landing, about, sign-in, QR generator, explore, developers and privacy pages render in the preview with no console errors",
+      "status": "verified for code; live flows pending",
+      "next_action": "Re-run the same checks against the live database once the Neon connection and secrets are in place."
+
     }
   ]
 }
